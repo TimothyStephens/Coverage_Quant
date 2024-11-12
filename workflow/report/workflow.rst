@@ -1,0 +1,1 @@
+This workflow takes raw or trimmed reads and maps then against reference MAGs/genomes using `bbmap` and calculates various coverage statistics using `coverM`. The latest version of this workflow can be found `here <https://github.com/TimothyStephens/Coverage_Quant>`.

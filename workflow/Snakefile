@@ -1,0 +1,44 @@
+#container: "docker://timothystephens/genotype_samples:latest"
+
+from snakemake.utils import min_version
+min_version("6.5")
+
+
+configfile: "workflow/config.default.yaml"
+
+report: "report/workflow.rst"
+
+
+include: "rules/common.smk"
+include: "rules/ref.smk"
+include: "rules/download.smk"
+include: "rules/trimming.smk"
+include: "rules/mapping.smk"
+include: "rules/qc.smk"
+include: "rules/multiqc.smk"
+
+
+DONE_WORKFLOW = "results/{project}/{module_file}.done".format(
+    project=config["project_name"], 
+    module_file=config["module"],
+)
+
+
+localrules:
+    all,
+    coverage,
+
+
+rule all:
+    input:
+        DONE_WORKFLOW,
+
+
+rule coverage:
+    input:
+        rules.multiqc.output,
+        "results/{project}/mapping/{ref_name}/coverage.tsv.gz".format(project=config["project_name"], ref_name=list(config["ref_path"].keys())[0]),
+    output:
+        touch("results/{project}/coverage.done"),
+
+

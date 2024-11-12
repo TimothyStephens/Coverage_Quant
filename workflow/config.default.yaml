@@ -1,0 +1,97 @@
+
+
+################################
+#### Download
+################################
+# fasterq-dump
+download_fastq_pe:
+  params: ''
+  threads: 6
+  retries: 5
+
+download_fastq_se:
+  params: ''
+  threads: 6
+  retries: 5
+
+
+################################
+#### bbmap index
+################################
+ref_bbmap_index:
+  threads: 4
+  memory: 24 # GB
+  params: ''
+
+################################
+#### Trimming
+################################
+# fastp paired-end
+trimming_pe:
+  params: ''
+  #params: '--disable_adapter_trimming --disable_trim_poly_g --disable_quality_filtering --disable_length_filtering --dont_eval_duplication' # Disable trimming
+  threads: 16
+
+# fastp single-end
+trimming_se:
+  params: ''
+  #params: '--disable_adapter_trimming --disable_trim_poly_g --disable_quality_filtering --disable_length_filtering --dont_eval_duplication' # Disable trimming
+  threads: 16
+
+# Merge trimmed units per sample
+trimming_merge:
+  threads: 1
+
+
+################################
+#### bbmap Mapping
+################################
+# Use 'reformat_params' to do additional filtering or down sampling of the reads before mapping:
+#samplerate=1            Randomly output only this fraction of reads; 1 means sampling is disabled.
+#sampleseed=-1           Set to a positive number to use that prng seed for sampling (allowing deterministic sampling).
+#samplereadstarget=0     (srt) Exact number of OUTPUT reads (or pairs) desired.
+
+mapping_bbmap_pe:
+  reformat_params: ''
+  mapping_params: 'ambiguous=random minid=0.95 maxindel=100' # Ignore low ID alignments (<90% ID) and very long indels (speeds up mapping)
+  sorting_params: ''
+  reformat_threads: 2
+  mapping_threads: 24
+  sorting_threads: 4
+  # Memory in GB
+  reformat_memory: 2 # GB
+  mapping_memory: 24 # GB
+  sorting_memory: 2  # GB thread
+
+mapping_bbmap_se:
+  reformat_params: ''
+  mapping_params: 'ambiguous=random minid=0.95 maxindel=100' # Ignore low ID alignments (<90% ID) and very long indels (speeds up mapping)
+  sorting_params: ''
+  reformat_threads: 2
+  mapping_threads: 24
+  sorting_threads: 4
+  # Memory in GB
+  reformat_memory: 2 # GB
+  mapping_memory: 24 # GB
+  sorting_memory: 2  # GB thread
+
+mapping_coverm_coverage:
+  threads: 6
+  params: '--min-read-percent-identity 98 --min-covered-fraction 0 --min-read-aligned-percent 70'
+  stats: 'relative_abundance mean trimmed_mean covered_bases variance length count reads_per_base rpkm tpm'
+
+
+################################
+#### QC
+################################
+# FastQC
+qc_FastQC:
+  params: ''
+  mem_mb: 512
+  threads: 1
+
+# MultiQC
+qc_multiqc:
+  params: ''
+
+

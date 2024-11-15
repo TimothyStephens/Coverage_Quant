@@ -135,12 +135,14 @@ rule mapping_coverm_coverage:
         g2s=config["g2s_path"],
         bams=get_bbmap_bams,
     output:
-        "results/{project}/mapping/{ref_name}/coverage.tsv.gz",
+        cov="results/{project}/mapping/{ref_name}/coverage.tsv.gz",
+        read_stats="results/{project}/mapping/{ref_name}/coverage.read_stats.tsv",
     params:
         extra=config["mapping_coverm_coverage"]["params"],
         stats=config["mapping_coverm_coverage"]["stats"],
     log:
-        "results/logs/{project}/mapping/{ref_name}/coverage.log",
+        general="results/logs/{project}/mapping/{ref_name}/coverage.log",
+        coverm="results/logs/{project}/mapping/{ref_name}/coverm.log",
     threads: config["mapping_coverm_coverage"]["threads"]
     conda:
         "../envs/coverm.yaml"
@@ -152,9 +154,18 @@ rule mapping_coverm_coverage:
         "  --genome-definition {input.g2s}"
         "  -t {threads}"
         "  -b {input.bams}"
+        " 2>{log.coverm}"
+        " sed -e 's/\.coordSorted//g'"
         " | gzip -c"
-        " > {output}"
+        " > {output.cov} "
+        ""
+        "cat {log.coverm}"
+        " | grep 'In sample'"
+        " | sed -e \"s/.* '\(.*\).coordSorted.*found \([^ ]*\) reads mapped out of \([^ ]*\) total (\(.*\))/\\1\\t\\2\\t\\3\\t\\4/\""
+        " | sort"
+        " | awk 'BEGIN{{print \"sample_id\\tmapped_reads\\ttotal_reads\\tpercent_mapped\"}}{{print}}'"
+        " > {output.read_stats}"
         ")"
-        " 1>{log} 2>&1"
+        " 1>{log.general} 2>&1"
 
 

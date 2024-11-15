@@ -101,7 +101,7 @@ def workflow(module, configfile, cores, max_downloads, max_memory, snakemake_arg
     
     \b
     Modules:
-      coverage        Salmon quant workflow
+      coverage        CoverM abundance workflow
     
     ##########################
     """

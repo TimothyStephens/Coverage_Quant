@@ -30,4 +30,5 @@ Conda packages used by this workflow:
   - samtools=1.16.1
   - samtools=1.21
   - sra-tools=3.0.5
+  - zip=3.0
 

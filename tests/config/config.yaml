@@ -1,0 +1,24 @@
+################################
+#### Config for CoverM Coverage Quant
+################################
+
+# Name of project
+project_name: 'YNP'
+
+# Path to sample manifest
+samples: 'tests/config/samples.tsv'
+
+# Path to fasta file with all MAG scaffolds combined together.
+# reference name : absolute path (can be gzipped)
+ref_path:
+  'Combined': 'tests/data/combined_MAGs.fa'
+
+# Path to tab-delimited text file listing the MAG_id (1st col) and sequence names of the scaffolds in each MAG (2nd col) - One line per sequence name.
+# MAG1 [tab] seq1
+# MAG1 [tab] seq2
+# ...
+# All listed sequence names must be in 'ref_path' but not all sequences in 'ref_path' need to be in 'g2s_path'
+# So, you can include contamination or decoy sequences in 'ref_path' and exclude them from 'g2s_path' to have CoverM calculate stats from just your target MAGs in 'g2s_path'.
+g2s_path: 'tests/data/mag2scaffold.tsv'
+
+

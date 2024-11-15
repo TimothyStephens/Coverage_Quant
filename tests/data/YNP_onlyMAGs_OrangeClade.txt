@@ -1,0 +1,17 @@
+YNP_Bacteria_bin034
+YNP_Archaea_bin021
+YNP_Virus_vOTUs.bin763
+YNP_Virus_vOTUs.bin901
+YNP_Bacteria_bin071
+YNP_Virus_vOTUs.bin941
+YNP_Bacteria_bin007
+YNP_Virus_vOTUs.bin376
+YNP_Bacteria_bin119
+YNP_Virus_vOTUs.bin1304
+YNP_Virus_vOTUs.bin1029
+YNP_Bacteria_bin037
+YNP_Bacteria_bin003
+YNP_Archaea_bin003
+YNP_Archaea_bin018
+YNP_Virus_vOTUs.bin705
+YNP_Bacteria_bin110

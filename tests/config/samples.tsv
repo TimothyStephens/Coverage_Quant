@@ -1,0 +1,13 @@
+sample_id	unit	lib_type	fq1	fq2	environment
+CreekBiofilm_1	1	pe	SRR29605924	SRR29605924	CreekBiofilm
+CreekBiofilm_2	1	pe	SRR29605940	SRR29605940	CreekBiofilm
+CreekBiofilm_3	1	pe	SRR29605941	SRR29605941	CreekBiofilm
+CreekBiofilm_4	1	pe	SRR29606237	SRR29606237	CreekBiofilm
+Endolithic_1	1	pe	SRR29616394	SRR29616394	Endolithic
+Endolithic_2	1	pe	SRR29605923	SRR29605923	Endolithic
+Endolithic_3	1	pe	SRR29605934	SRR29605934	Endolithic
+Endolithic_4	1	pe	SRR29606230	SRR29606230	Endolithic
+Soil_1	1	pe	SRR29605852	SRR29605852	Soil
+Soil_2	1	pe	SRR29605747	SRR29605747	Soil
+Soil_3	1	pe	SRR29605939	SRR29605939	Soil
+Soil_4	1	pe	SRR29605948	SRR29605948	Soil

@@ -1,0 +1,176 @@
+---
+title: "Alpha-Diversity"
+author: "Coverage_Quant"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    keep_md: yes
+---
+
+
+
+```{r setup, include=FALSE}
+# The following setting is important, do not omit.
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.height = 8,
+                      fig.width = 12,
+                      dev = c("png", "pdf"),
+                      dpi = 1000)
+options(scipen = 999) # Prevent scientific notation
+rm(list = ls()) # Clear environment
+```
+
+*Note: Open scripts.Rproj first, then script. To easily use relative paths, click the down button next to knit and then click "Knit Directory --> Project Directory". This should make loading and saving files much easier.*
+
+
+
+# Alpha-diversity Analysis
+
+Alpha-diversity represents diversity within an ecosystem or a sample, in other words, what is there and how much is there in term of species. However, it is not easy to define a species and we can calculate alpha-diversity at different taxonomic levels.
+
+Several alpha-diversity indices can be calculated. Within the most commonly used:
+ - Richness represents the number of species observed in each sample.
+ - Chao1 estimates the total richness.
+ - Pielou’s evenness provides information about the equity in species abundance in each sample, in other words are some species dominating others or do all species have quite the same abundances.
+ - Shannon index provides information about both richness and evenness.
+
+Alpha-diversity is calculated on the raw data. It is important to not use filtered data because many richness estimates are modeled on singletons and doubletons in the occurrence table. So, you need to leave them in the dataset if you want a meaningful estimate.
+Moreover, we usually not using normalized data because we want to assess the diversity on the raw data and we are not comparing samples to each other but only assessing diversity within each sample.
+
+Based heavily on tutorial: https://scienceparkstudygroup.github.io/microbiome-lesson/04-alpha-diversity/index.html
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
+Regardless, the user should check over all code blocks to ensure that everything is running correctly.
+
+
+
+## 1. Load packages
+
+Load packages.
+```{r load_packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(maditr)
+library(vegan)
+library(patchwork)
+```
+
+
+
+## 2. Set variables
+
+<span style="color:red">**Change file names and condition variables where appropriate.**</span>
+```{r variables}
+# Input samples metadata
+metadata.file <- "samples.tsv"
+# Input coverage file
+cov.file <- "coverage.tsv.gz"
+# Variable in `meatdata.file` to use for plotting
+condition <- "environment"
+# Color of `condition` vairables, use this order for plotting
+metadata.color <- c("CreekBiofilm"="#3b8f43", "Endolithic"="#8559a5", "Soil"="#ee7f22")
+```
+
+
+
+## 3. Load, clean, and pre-processing datasets
+
+<span style="color:red">**Adjust filtering to remove MAGs which you don't want used for diversity analysis.**</span>
+```{r load_cov}
+data_otu  <- read.table(cov.file, header = TRUE, sep = '\t') %>%
+  select(c("Sample", "Genome", "TPM")) %>%
+  filter(! Genome %in% c("unmapped", 
+                         "Cmer_10D", "Cmer_10D_chloroplast", "Cmer_10D_mitochondria", 
+                         "Gsulp_YNP5587_1_nuclear", "Gsulp_YNP5587_1_chloroplast", "Gsulp_YNP5587_1_mitochondria")) %>%
+  dcast(Sample~Genome) %>%
+  column_to_rownames("Sample")
+
+data_otu <- as.matrix(data_otu)
+data_otu <- round(data_otu)
+mode(data_otu) <- "integer"
+```
+
+
+```{r load_metadata}
+data_grp  <- read.table(metadata.file, header = TRUE, sep = '\t') %>%
+  select(c("sample_id", condition)) %>%
+  rename(variable=environment) %>%
+  mutate(variable=factor(variable, levels=names(metadata.color))) %>%
+  column_to_rownames("sample_id")
+```
+
+
+
+## 4. Indices calculation
+
+Alpha-diversity is calculated on the raw data (here `data_otu`).
+```{r calculate_richness_stats}
+data_richness <- estimateR(data_otu)                                            # calculate richness and Chao1 using vegan package
+
+data_evenness <- diversity(data_otu) / log(specnumber(data_otu))                # calculate evenness index using vegan package
+
+data_shannon <- diversity(data_otu, index = "shannon")                          # calculate Shannon index using vegan package
+
+data_alphadiv <- cbind(data_grp, t(data_richness), data_shannon, data_evenness) # combine all indices in one data table
+
+rm(data_richness, data_evenness, data_shannon)                                  # remove the unnecessary data/vector
+```
+
+
+
+## 5. Visualization
+
+```{r plot_results}
+P1 <- ggplot(data_alphadiv, aes(x=variable, y=S.obs)) +
+  geom_boxplot(fill=metadata.color) +
+  labs(title= 'Richness', x= ' ', y= '', tag = "A") +
+  geom_point()
+
+P2 <- ggplot(data_alphadiv, aes(x=variable, y=S.chao1)) +
+  geom_boxplot(fill=metadata.color) +
+  labs(title= 'Chao1', x= ' ', y= '', tag = "B") +
+  geom_point()
+
+P3 <- ggplot(data_alphadiv, aes(x=variable, y=data_evenness)) +
+  geom_boxplot(fill=metadata.color) +
+  labs(title= 'Eveness', x= ' ', y= '', tag = "C") +
+  geom_point()
+
+P4 <- ggplot(data_alphadiv, aes(x=variable, y=data_shannon)) +
+  geom_boxplot(fill=metadata.color) +
+  labs(title= 'Shannon', x= ' ', y= '', tag = "D") +
+  geom_point()
+
+(P1 | P2) / (P3 | P4)
+```
+
+
+Plot the four alpha-diversity indices (`S.obs`, `S.chao1`, `data_shannon`, `data_evenness`) for both sites.
+```{r plot_pairs}
+pairs(data_alphadiv[,c(2,3,7,8)])
+```
+
+```{r plot_cov}
+cor(data_alphadiv[,c(2,3,7,8)])
+```
+
+
+
+## 6. Statistical analyses
+
+You can use different statistical tests in order to test if there is any significant differences between treatments: parametric tests (t-test and ANOVA) or non-parametric tests (Mann-Whitney and Kruskal-Wallis). Before using parametric tests, you need to make sure that you can use them (e.g. normal distribution, homoscedasticity).
+We will use parametric tests for the following analysis.
+
+We will first test the effect of the sampling site on the Shannon index using one-factor ANOVA test.
+```{r summary_stats}
+summary(aov(data_shannon ~ variable, data = data_alphadiv))
+```
+We can interpret the results as following:
+ - There is a significant effect of the 'variable': Pr(>F) = 0.00199 (P-value < 0.01)
+
+
+
+## 7. Session Info
+
+```{r ressionInfo}
+sessionInfo()
+```

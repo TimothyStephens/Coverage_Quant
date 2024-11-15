@@ -1,0 +1,208 @@
+---
+title: "Plot TPM heatmap for different groupings of MAGs (extracted from network) across metagenome samples"
+author: "Coverage_Quant"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    keep_md: yes
+---
+
+
+
+```{r setup, include=FALSE}
+# The following setting is important, do not omit.
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.height = 8, 
+                      fig.width = 8, 
+                      dev = c("png", "pdf"),
+                      dpi = 1000)
+options(scipen = 999) #Prevent scientific notation
+rm(list = ls()) # Clear environment
+```
+
+*Note: Open scripts.Rproj first, then script. To easily use relative paths, click the down button next to knit and then click "Knit Directory --> Project Directory". This should make loading and saving files much easier.*
+
+
+
+# Heat Maps
+
+Produce a coverage heatmap for each subset of samples selected from the network analysis.
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
+Regardless, the user should check over all code blocks to ensure that everything is running correctly.
+
+
+
+## 1. Load packages
+
+Load packages.
+```{r load_packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(maditr)
+library(gplots)
+library(viridis)
+```
+
+
+
+## 2. Set variables
+
+<span style="color:red">**Change file names and condition variables where appropriate.**</span>
+```{r variables}
+# Input metadata file
+metadata.file <- "mag_metadata.tsv"
+# Input coverage file
+cov.file        <- "coverage.tsv.gz"
+# Output coverage results
+prefix <- "mag2scaffold.subset"
+```
+
+
+
+## 3. Load, clean, and pre-processing datasets
+
+Load metadata file.
+``` {r load_metadata}
+metadata <- read.table(metadata.file,
+                       sep='\t', header=TRUE, check.names=FALSE,
+                       stringsAsFactors=FALSE, comment.char='')
+```
+
+Load `coverm genome` MAG coverage results - clean-up sample names.
+``` {r MAG_grouping}
+cov <- read.table(cov.file, sep='\t', 
+                  header=TRUE, check.names=FALSE,
+                  stringsAsFactors=FALSE)
+```
+
+
+Open subset files and extract gene names.
+<span style="color:red">**Adjust file names as needed.**</span>
+```{r load_subset_seq_names}
+clade.green  <- read.table("YNP_onlyMAGs_GreenClade.txt",  sep=',', header=FALSE, check.names=FALSE, stringsAsFactors=FALSE) %>% select(V1) %>% as.vector() %>% .[["V1"]]
+clade.orange <- read.table("YNP_onlyMAGs_OrangeClade.txt", sep=',', header=FALSE, check.names=FALSE, stringsAsFactors=FALSE) %>% select(V1) %>% as.vector() %>% .[["V1"]]
+clade.purple <- read.table("YNP_onlyMAGs_PurpleClade.txt", sep=',', header=FALSE, check.names=FALSE, stringsAsFactors=FALSE) %>% select(V1) %>% as.vector() %>% .[["V1"]]
+clade.red.   <- read.table("YNP_onlyMAGs_RedClade.txt",    sep=',', header=FALSE, check.names=FALSE, stringsAsFactors=FALSE) %>% select(V1) %>% as.vector() %>% .[["V1"]]
+```
+
+
+Extract coverage values from `coverm genome` results file and format into a matrix for plotting.
+``` {r extract_coverage_values}
+# Build matrix using: Group_ID<->sample
+cov.TPM <- cov %>%
+  dcast(Genome ~ Sample, value.var = "TPM") %>%
+  filter(!Genome %in% c("unmapped")) %>%
+  column_to_rownames("Genome")
+```
+
+
+Colors for plotting
+```{r colors_for_plotting}
+# Row colors (ordered by Group_ID in TPM matrix)
+row.colors <- data.frame("MAG_ID" = rownames(cov.TPM))
+row.colors <- merge(row.colors, metadata, 
+                    by.x = "MAG_ID", by.y = "MAG_ID", 
+                    all.x = TRUE, all.y = FALSE)
+```
+
+
+
+## 4. Heatmaps
+
+``` {r heatmap_TPM_z-score_scalled_GreenClade}
+# Z-score scaled TPM by MAG (row) using the 'scale' function
+selected.names <- clade.green
+heatmap.2(cov.TPM[selected.names, ] %>% t() %>% scale() %>% t() %>% as.matrix(),
+          main="Green clade - TPM z-score scaled rows (groups)",
+          Colv=FALSE,
+          dendrogram="row",
+          col=viridis,
+          trace="none", # Draw "trace" line
+          key=TRUE, # Show color-key
+          margins=c(8,8), # Numeric vector of length 2 containing the margins for column and row names, respectively.
+          offsetRow=0,
+          offsetCol=0,
+          cexRow=0.05, # Positive numbers, used as cex.axis in for the row or column axis labeling.
+          cexCol=0.4,
+          #cellnote=formatC(cov.TPM, big.mark=",", format = "fg"),
+          notecex=0.05,
+          RowSideColors=as.vector(row.colors[row.colors$MAG_ID %in% selected.names, ]$Label_color),
+          )
+```
+
+
+
+``` {r heatmap_TPM_z-score_scalled_OrangeClade}
+# Z-score scaled TPM by MAG (row) using the 'scale' function
+selected.names <- clade.orange
+heatmap.2(cov.TPM[selected.names, ] %>% t() %>% scale() %>% t() %>% as.matrix(),
+          main="Orange clade - TPM z-score scaled rows (groups)",
+          Colv=FALSE,
+          dendrogram="row",
+          col=viridis,
+          trace="none", # Draw "trace" line
+          key=TRUE, # Show color-key
+          margins=c(8,8), # Numeric vector of length 2 containing the margins for column and row names, respectively.
+          offsetRow=0,
+          offsetCol=0,
+          cexRow=0.05, # Positive numbers, used as cex.axis in for the row or column axis labeling.
+          cexCol=0.4,
+          #cellnote=formatC(cov.TPM, big.mark=",", format = "fg"),
+          notecex=0.05,
+          RowSideColors=as.vector(row.colors[row.colors$MAG_ID %in% selected.names, ]$Label_color),
+          )
+```
+
+
+
+``` {r heatmap_TPM_z-score_scalled_PurpleClade}
+# Z-score scaled TPM by MAG (row) using the 'scale' function
+selected.names <- clade.purple
+heatmap.2(cov.TPM[selected.names, ] %>% t() %>% scale() %>% t() %>% as.matrix(),
+          main="Purple clade - TPM z-score scaled rows (groups)",
+          Colv=FALSE,
+          dendrogram="row",
+          col=viridis,
+          trace="none", # Draw "trace" line
+          key=TRUE, # Show color-key
+          margins=c(8,8), # Numeric vector of length 2 containing the margins for column and row names, respectively.
+          offsetRow=0,
+          offsetCol=0,
+          cexRow=0.05, # Positive numbers, used as cex.axis in for the row or column axis labeling.
+          cexCol=0.4,
+          #cellnote=formatC(cov.TPM, big.mark=",", format = "fg"),
+          notecex=0.05,
+          RowSideColors=as.vector(row.colors[row.colors$MAG_ID %in% selected.names, ]$Label_color),
+          )
+```
+
+
+
+``` {r heatmap_TPM_z-score_scalled_RedClade}
+# Z-score scaled TPM by MAG (row) using the 'scale' function
+selected.names <- clade.red.
+heatmap.2(cov.TPM[selected.names, ] %>% t() %>% scale() %>% t() %>% as.matrix(),
+          main="Red clade - TPM z-score scaled rows (groups)",
+          Colv=FALSE,
+          dendrogram="row",
+          col=viridis,
+          trace="none", # Draw "trace" line
+          key=TRUE, # Show color-key
+          margins=c(8,8), # Numeric vector of length 2 containing the margins for column and row names, respectively.
+          offsetRow=0,
+          offsetCol=0,
+          cexRow=0.05, # Positive numbers, used as cex.axis in for the row or column axis labeling.
+          cexCol=0.4,
+          #cellnote=formatC(cov.TPM, big.mark=",", format = "fg"),
+          notecex=0.05,
+          RowSideColors=as.vector(row.colors[row.colors$MAG_ID %in% selected.names, ]$Label_color),
+          )
+```
+
+
+
+## 5. Session Info
+
+```{r ressionInfo}
+sessionInfo()
+```

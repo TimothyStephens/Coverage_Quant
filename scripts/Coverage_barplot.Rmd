@@ -1,0 +1,482 @@
+---
+title: "Bar plot of coverage results across MAGs for each sample"
+author: "Coverage_Quant"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    keep_md: yes
+---
+
+
+
+
+
+```{r setup, include=FALSE}
+# The following setting is important, do not omit.
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.height = 8, 
+                      fig.width = 8, 
+                      dev = c("png", "pdf"),
+                      dpi = 1000)
+options(scipen = 999) #Prevent scientific notation
+rm(list = ls()) # Clear environment
+```
+
+*Note: Open scripts.Rproj first, then script. To easily use relative paths, click the down button next to knit and then click "Knit Directory --> Project Directory". This should make loading and saving files much easier.*
+
+
+
+# Coverage Bar Plots
+
+Produce stacked bar plots of the MAG coverage across each sample.
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
+Regardless, the user should check over all code blocks to ensure that everything is running correctly.
+
+
+
+## 1. Load packages
+
+Load packages.
+```{r load_packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(maditr)
+library(reshape2)
+library(htmlwidgets)
+library(plotly)
+library(grid)
+library(cowplot)
+```
+
+
+
+## 2. Set variables
+
+<span style="color:red">**Change file names and condition variables where appropriate.**</span>
+```{r variables}
+# Input metadata file
+metadata.file <- "mag_metadata.tsv"
+# Input coverage file
+cov.file        <- "coverage.tsv.gz"
+read_stats.file <- "coverage.read_stats.tsv"
+# Output coverage results
+prefix <- "mag2scaffold"
+out_ReadCount.file <- paste(prefix, "-ReadCount.tsv", sep='')
+out_TPM.file       <- paste(prefix, "-TPM.tsv", sep='')
+```
+
+
+
+## 3. Load, clean, and pre-processing datasets
+
+Load metadata file.
+``` {r load_metadata}
+metadata <- read.table(metadata.file, sep='\t', header=TRUE, check.names=FALSE, stringsAsFactors=FALSE, comment.char='')
+```
+
+
+Load (mapped) read stats file.
+``` {r load_readstats}
+read_stats <- read.table(read_stats.file, sep='\t', 
+                         header=TRUE, check.names=FALSE, stringsAsFactors=FALSE) %>% 
+  column_to_rownames("sample_id")
+```
+
+
+Load `coverm genome` MAG coverage results - clean-up sample names.
+```{r load_cov}
+cov <- read.table(cov.file, sep='\t',
+                  header=TRUE, check.names=FALSE, stringsAsFactors=FALSE)
+```
+
+
+Extract coverage values from `coverm genome` results file and format into a matrix for plotting.
+``` {r extract_coverage_values}
+# Build matrix using: Group_ID<->sample
+cov.ReadCount <- cov %>%
+  dcast(Genome ~ Sample, value.var = "Read Count") %>%
+  filter(!Genome %in% c("unmapped")) %>%
+  column_to_rownames("Genome")
+
+cov.TPM <- cov %>%
+  dcast(Genome ~ Sample, value.var = "TPM") %>%
+  filter(!Genome %in% c("unmapped")) %>%
+  column_to_rownames("Genome")
+
+cov.RPKM <- cov %>%
+  dcast(Genome ~ Sample, value.var = "RPKM") %>%
+  filter(!Genome %in% c("unmapped")) %>%
+  column_to_rownames("Genome")
+```
+
+
+Add unaligned/unassigned read counts to matrix.
+```{r add_unalinged_reads}
+col.order <- colnames(cov.ReadCount)
+cov.ReadCount["Unassigned",] = read_stats[col.order,]$total_reads - read_stats[col.order,]$mapped_reads
+
+# Add entry to metadata file.
+metadata <- rbind(metadata, c("Unassigned", "Unassigned"))
+```
+
+
+Colors for plotting.
+```{r colors_for_plotting}
+t <- metadata[,c("Label", "Label_color")] %>% 
+  group_by(Label, Label_color) %>% 
+  summarize(n=n(), .groups="drop")
+
+colors <- t$Label_color
+names(colors) <- t$Label
+
+colors <- colors[ - which(names(colors) == "d__Viruses--r__")]
+colors[["d__Viruses--r__"]] <- "#969696"
+
+colors <- colors[ - which(names(colors) == "Unassigned")]
+colors[["Unassigned"]] <- "#4d4d4d"
+```
+
+
+Merge `cov` matrices with metadata.
+Control the order of the bars in the plot using the `names.ordered` list.
+<span style="color:red">**Adjust `names.ordered` as required.**</span>
+```{r merge_metadata}
+names.ordered <- c(
+  "Cmer_10D",
+  "Cmer_10D_chloroplast",
+  "Cmer_10D_mitochondria",
+  "Gsulp_YNP5587_1_nuclear",
+  "Gsulp_YNP5587_1_chloroplast",
+  "Gsulp_YNP5587_1_mitochondria",
+  "d__Archaea--p__Micrarchaeota",
+  "d__Archaea--p__Nanoarchaeota",
+  "d__Archaea--p__Thermoplasmatota",
+  "d__Archaea--p__Thermoproteota",
+  "d__Bacteria--p__Actinobacteriota",
+  "d__Bacteria--p__Aquificota",
+  "d__Bacteria--p__Bacteroidota",
+  "d__Bacteria--p__Campylobacterota",
+  "d__Bacteria--p__Chlamydiota",
+  "d__Bacteria--p__Deinococcota",
+  "d__Bacteria--p__Dependentiae",
+  "d__Bacteria--p__Desulfobacterota_B",
+  "d__Bacteria--p__Dormibacterota",
+  "d__Bacteria--p__Firmicutes",
+  "d__Bacteria--p__Firmicutes_B",
+  "d__Bacteria--p__Firmicutes_E",
+  "d__Bacteria--p__Nitrospirota_A",
+  "d__Bacteria--p__Patescibacteria",
+  "d__Bacteria--p__Planctomycetota",
+  "d__Bacteria--p__Proteobacteria",
+  "d__Bacteria--p__SZUA-79",
+  "d__Bacteria--p__Thermotogota",
+  "d__Eukaryota--d__Eukaryota",
+  "d__Viruses--r__Adnaviria",
+  "d__Viruses--r__Duplodnaviria",
+  "d__Viruses--r__Inoviridae",
+  "d__Viruses--r__Monodnaviria",
+  "d__Viruses--r__Riboviria",
+  "d__Viruses--r__Varidnaviria",
+  "d__Viruses--r__environmental samples",
+  "d__Viruses--r__unclassified",
+  "d__Viruses--r__unclassified archaeal viruses",
+  "d__Viruses--r__unclassified bacterial viruses",
+  "d__Viruses--r__unclassified virophages",
+  "d__Viruses--r__unclassified viruses",
+  "d__Viruses--r__",
+  "Unassigned"
+)
+
+cov.ReadCount <- merge(cov.ReadCount %>% as.matrix() %>% melt(), 
+      metadata, 
+      by.x = "Var1", by.y = "MAG_ID", 
+      all.x = TRUE, all.y = FALSE) %>% 
+  mutate(Label = factor(Label, levels = names.ordered)) %>%
+  rename(MAG_ID = Var1) %>%
+  rename(Sample = Var2)
+
+cov.RPKM <- merge(cov.RPKM %>% as.matrix() %>% melt(), 
+      metadata, 
+      by.x = "Var1", by.y = "MAG_ID", 
+      all.x = TRUE, all.y = FALSE) %>% 
+  mutate(Label = factor(Label, levels = names.ordered)) %>%
+  rename(MAG_ID = Var1) %>%
+  rename(Sample = Var2)
+
+cov.TPM <- merge(cov.TPM %>% as.matrix() %>% melt(), 
+      metadata, 
+      by.x = "Var1", by.y = "MAG_ID", 
+      all.x = TRUE, all.y = FALSE) %>% 
+  mutate(Label = factor(Label, levels = names.ordered)) %>%
+  rename(MAG_ID = Var1) %>%
+  rename(Sample = Var2)
+```
+
+
+Write read count tables to file (in case we want them downstream since they are now nicely formatted).
+```{r write_matrices}
+write.table(cov.ReadCount, out_ReadCount.file, 
+            quote=FALSE, sep='\t', row.names=FALSE, col.names=TRUE)
+write.table(cov.TPM, out_TPM.file, 
+            quote=FALSE, sep='\t', row.names=FALSE, col.names=TRUE)
+```
+
+
+
+## 4. Plot ReadCounts
+
+```{r barchart_ReadCounts}
+p <- cov.ReadCount %>%
+  ggplot(aes(x=Sample, y=value, fill=Label)) + 
+    geom_bar(position="fill", stat="identity", aes(label=MAG_ID, label2=value)) +
+    scale_fill_manual(values = colors) + 
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Write plot as interactive HTML file
+saveWidget(suppressWarnings(ggplotly(p)), file=paste(prefix,".ReadCount.html", sep=''))
+
+# Plot
+p + theme(legend.position = "none")
+
+# Plot legend
+grid.newpage()
+grid.draw(get_legend(p))
+```
+
+
+Plot Read Count with top most abundant samples highlighted.
+```{r barchart_ReadCount_highlightedTop}
+alpha.min <- 0.5
+alpha.max <- 1.0
+percent.cutoff <- 2
+
+sample.sum <- cov.ReadCount %>% 
+  group_by(Sample) %>% 
+  summarize(sum=sum(value), .groups="drop") %>% 
+  column_to_rownames("Sample")
+
+d <- cov.ReadCount %>%
+  mutate(proportion = ((value / sample.sum[Sample, ])*100)) %>%
+  mutate(selected = if_else( proportion > percent.cutoff, TRUE, FALSE)) %>%
+  mutate(selected_alpha = if_else(selected, 
+                                  alpha.max, 
+                                  alpha.min
+                                  )) %>%
+  mutate(selected_label = if_else(selected, 
+                                  paste(MAG_ID, " (", round(proportion, 2), "%)", sep=''), 
+                                  ""
+                                  ))
+
+# Write transformed data to file - Pivot to wide format for writing
+t <- d %>%
+  select(-selected_alpha, -selected_label) %>%
+  pivot_wider(names_from = Sample,
+              values_from = c(value, proportion, selected),
+              names_glue = "{Sample} {.value}",
+              names_vary="slowest",
+              names_sort=TRUE) %>%
+  mutate(all_selected = if_any(contains("selected"), ~ .x)) # Add column summarizing the selected columns (i.e., was the row selected at any "Sample")
+write.table(t, file=paste(prefix,".ReadCount_highlightedTop.tsv", sep=''), sep='\t', quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+p <- d %>%
+  ggplot(aes(x=Sample, y=value, 
+             fill=Label, alpha=selected_alpha,
+             color=selected, linetype=selected,
+             label=MAG_ID, label2=value)) + 
+  geom_bar(position="fill", stat="identity", linewidth=0.1) +
+  geom_text(aes(label = selected_label), 
+                position = position_fill(vjust = 0.5),
+                size = 1
+            ) +
+  scale_fill_manual(values = colors) + 
+  scale_alpha(range = c(alpha.min, alpha.max)) +
+  scale_color_manual(values = c("black","black")) +
+  scale_linetype_manual(values = c("blank", "solid")) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Write plot as interactive HTML file
+saveWidget(suppressWarnings(ggplotly(p)), file=paste(prefix,".ReadCount_highlightedTop.html", sep=''))
+
+# Plot
+p + theme(legend.position = "none")
+
+# Plot legend
+grid.newpage()
+grid.draw(get_legend(p))
+```
+
+
+
+## 5. Plot TPM
+
+```{r barchart_TPM}
+p <- cov.TPM %>% 
+  arrange(Label) %>%
+  ggplot(aes(x=Sample, y=value, fill=Label)) + 
+    geom_bar(position="stack", stat="identity", aes(label=MAG_ID, label2=value)) +
+    scale_fill_manual(values = colors) + 
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Write plot as interactive HTML file
+saveWidget(suppressWarnings(ggplotly(p)), file=paste(prefix,".TPM.html", sep=''))
+
+# Plot
+p + theme(legend.position = "none")
+
+# Plot legend
+grid.newpage()
+grid.draw(get_legend(p))
+```
+
+
+Plot TPM with top most abundant samples highlighted.
+```{r barchart_TPM_highlightedTop}
+alpha.min <- 0.5
+alpha.max <- 1.0
+percent.cutoff <- 2
+
+d <- cov.TPM %>%
+  mutate(proportion = ((value/1000000)*100)) %>%
+  mutate(selected = if_else( proportion > percent.cutoff, TRUE, FALSE)) %>%
+  mutate(selected_alpha = if_else(selected, 
+                                  alpha.max, 
+                                  alpha.min
+                                  )) %>%
+  mutate(selected_label = if_else(selected, 
+                                  paste(MAG_ID, " (", round(proportion, 2), "%)", sep=''), 
+                                  ""
+                                  ))
+
+# Write transformed data to file - Pivot to wide format for writing
+t <- d %>%
+  select(-selected_alpha, -selected_label) %>%
+  pivot_wider(names_from = Sample,
+              values_from = c(value, proportion, selected),
+              names_glue = "{Sample} {.value}",
+              names_vary="slowest",
+              names_sort=TRUE) %>%
+  mutate(all_selected = if_any(contains("selected"), ~ .x)) # Add column summarizing the selected columns (i.e., was the row selected at any "Sample")
+write.table(t, file=paste(prefix,".TPM_highlightedTop.tsv", sep=''), sep='\t', quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+p <- d %>%
+  ggplot(aes(x=Sample, y=value, 
+             fill=Label, alpha=selected_alpha,
+             color=selected, linetype=selected,
+             label=MAG_ID, label2=value)) + 
+  geom_bar(position="fill", stat="identity", linewidth=0.1) +
+  geom_text(aes(label = selected_label), 
+                position = position_fill(vjust = 0.5),
+                size = 1
+            ) +
+  scale_fill_manual(values = colors) + 
+  scale_alpha(range = c(alpha.min, alpha.max)) +
+  scale_color_manual(values = c("black","black")) +
+  scale_linetype_manual(values = c("blank", "solid")) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Write plot as interactive HTML file
+saveWidget(suppressWarnings(ggplotly(p)), file=paste(prefix,".TPM_highlightedTop.html", sep=''))
+
+# Plot
+p + theme(legend.position = "none")
+
+# Plot legend
+grid.newpage()
+grid.draw(get_legend(p))
+```
+
+
+
+## 6. Plot RPKM
+
+```{r barchart_RPKM}
+p <- cov.RPKM %>%
+  ggplot(aes(x=Sample, y=value, fill=Label)) + 
+    geom_bar(position="fill", stat="identity", aes(label=MAG_ID, label2=value)) +
+    scale_fill_manual(values = colors) + 
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Write plot as interactive HTML file
+saveWidget(suppressWarnings(ggplotly(p)), file=paste(prefix,".RPKM.html", sep=''))
+
+# Plot
+p + theme(legend.position = "none")
+
+# Plot legend
+grid.newpage()
+grid.draw(get_legend(p))
+```
+
+
+
+Plot RPKM with top most abundant samples highlighted.
+```{r barchart_RPKM_highlightedTop}
+alpha.min <- 0.5
+alpha.max <- 1.0
+percent.cutoff <- 2
+
+d <- cov.RPKM %>%
+  mutate(proportion = ((value/1000000)*100)) %>%
+  mutate(selected = if_else( proportion > percent.cutoff, TRUE, FALSE)) %>%
+  mutate(selected_alpha = if_else(selected, 
+                                  alpha.max, 
+                                  alpha.min
+                                  )) %>%
+  mutate(selected_label = if_else(selected, 
+                                  paste(MAG_ID, " (", round(proportion, 2), "%)", sep=''), 
+                                  ""
+                                  ))
+
+# Write transformed data to file - Pivot to wide format for writing
+t <- d %>%
+  select(-selected_alpha, -selected_label) %>%
+  pivot_wider(names_from = Sample,
+              values_from = c(value, proportion, selected),
+              names_glue = "{Sample} {.value}",
+              names_vary="slowest",
+              names_sort=TRUE) %>%
+  mutate(all_selected = if_any(contains("selected"), ~ .x)) # Add column summarizing the selected columns (i.e., was the row selected at any "Sample")
+write.table(t, file=paste(prefix,".RPKM_highlightedTop.tsv", sep=''), sep='\t', quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+p <- d %>%
+  ggplot(aes(x=Sample, y=value, 
+             fill=Label, alpha=selected_alpha,
+             color=selected, linetype=selected,
+             label=MAG_ID, label2=value)) + 
+  geom_bar(position="fill", stat="identity", linewidth=0.1) +
+  geom_text(aes(label = selected_label), 
+                position = position_fill(vjust = 0.5),
+                size = 1
+            ) +
+  scale_fill_manual(values = colors) + 
+  scale_alpha(range = c(alpha.min, alpha.max)) +
+  scale_color_manual(values = c("black","black")) +
+  scale_linetype_manual(values = c("blank", "solid")) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Write plot as interactive HTML file
+saveWidget(suppressWarnings(ggplotly(p)), file=paste(prefix,".RPKM_highlightedTop.html", sep=''))
+
+# Plot
+p + theme(legend.position = "none")
+
+# Plot legend
+grid.newpage()
+grid.draw(get_legend(p))
+```
+
+
+
+
+
+## 7. Session Info
+
+```{r ressionInfo}
+sessionInfo()
+```

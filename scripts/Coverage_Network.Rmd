@@ -1,0 +1,399 @@
+---
+title: "Calculate distances between MAGs using TPM coverage across samples"
+author: "Coverage_Quant"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    keep_md: yes
+---
+
+
+
+```{r setup, include=FALSE}
+# The following setting is important, do not omit.
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.height = 8,
+                      fig.width = 12,
+                      dev = c("png", "pdf"),
+                      dpi = 1000)
+options(scipen = 999) # Prevent scientific notation
+rm(list = ls()) # Clear environment
+```
+
+*Note: Open scripts.Rproj first, then script. To easily use relative paths, click the down button next to knit and then click "Knit Directory --> Project Directory". This should make loading and saving files much easier.*
+
+
+
+# Differential Gene Expression Analysis
+
+Perform Differential Gene Expression (DGE) analysis using a read count table (usually from Salmon) and a sample metadata sheet (user made).
+
+<span style="color:red">**Red text**</span> indicates regions that require the user to modify.
+Regardless, the user should check over all code blocks to ensure that everything is running correctly.
+
+
+
+## 1. Load packages
+
+Load packages.
+```{r load_packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(maditr)
+#install.packages("remotes")
+#BiocManager::install(c("GO.db", "AnnotationDbi", "impute", "preprocessCore"))
+#install.packages("WGCNA")
+#remotes::install_github("andymckenzie/DGCA")
+library(DGCA)
+library(dynamicTreeCut)
+library(igraph)
+library(ape)
+library(gplots)
+library(viridis)
+```
+
+
+
+## 2. Set variables
+
+<span style="color:red">**Change file names and condition variables where appropriate.**</span>
+```{r variables}
+# Input metadata
+metadata.file <- "mag_metadata.tsv"
+# Input coverage file
+cov.file <- "coverage.tsv.gz"
+# Output files
+prefix <- "coverage"
+output.edges    <- paste(prefix, ".edges.tsv", sep = "")
+output.nodeinfo <- paste(prefix, ".nodeInfo.tsv", sep = "")
+```
+
+
+
+## 3. Load, clean, and pre-processing datasets
+
+Load `coverm genome` MAG coverage results - extract coverage values from `coverm genome` results file and format into a matrix for plotting.
+
+Required for network analysis:
+`data`
+Matrix: Row:MAG_ID <-> Column:Sample_ID
+``` {r MAG_grouping}
+cov <- read.table(cov.file, sep='\t', 
+                  header=TRUE, check.names=FALSE, stringsAsFactors=FALSE)
+
+# Build matrix using: Group_ID<->sample
+data <- cov %>%
+  dcast(Genome ~ Sample, value.var = "TPM") %>%
+  filter(!Genome %in% c("unmapped")) %>%
+  column_to_rownames("Genome")
+head(data)
+```
+
+
+Load metdata file. Also add colors to metadata for plotting.
+
+Required for network analysis:
+`metadata` 
+Matrix: Row:MAG ID <-> Column:metadata for MAG
+ - Requires `MAG_ID`, `Label` and `Label_color` columns
+ - Requires `MAG_ID` to be row names
+ - Requires `MAG_ID` to be **first column**
+``` {r load_metadata}
+metadata <- read.table(metadata.file, sep='\t', header=TRUE, check.names=FALSE, stringsAsFactors=FALSE, comment.char='')
+head(metadata)
+```
+
+
+
+# Construct network
+
+## 1. Generate correlation matrix
+
+Also calculate significance (*p*- and adjusted *p*-) values for each edge (correlation between two pairs).
+``` {r generate_correlation_values}
+# 1. Transpose CoverM results
+#      - Convert from Rows:Genomes/MAGs & Columns:Samples -> Rows:Samples & Columns:Genomes/MAGs
+# 2. Z-Scale
+#      - Scale values for each Genome/MAG across Samples (relative change in the abundance of these Genomes/MAGs across samples)
+t.data <- data %>% t() %>% scale()
+
+# Generate correlation matrix using scalled values
+cor.data <- matCorr(t.data, corrType="pearson")
+
+# Conver from a N x M matrix to a pairwise list with NxM rows
+pairs.cor.data <- data.frame(n1=rownames(cor.data)[row(cor.data)],
+                             n2=colnames(cor.data)[col(cor.data)],
+                             cor=c(cor.data))
+
+# Extract row and column names. Used to add these labels to matrix objects created later. 
+cor.data.row <- rownames(cor.data)
+cor.data.col <- colnames(cor.data)
+
+# Number of Samples per correlation value (i.e., number of Samples per Genome that were used for the correlation analysis - will be the same for all Genomes)
+nsample.data <- matNSamp(t.data)
+
+# Generate significance values for each correlation value. 
+cor.data.pval <- matCorSig(cor.data, nsample.data)
+colnames(cor.data.pval) <- cor.data.col
+rownames(cor.data.pval) <- cor.data.row
+
+# Conver from a N x M matrix to a pairwise list with NxM rows
+pairsPval <- data.frame(n1=rownames(cor.data.pval)[row(cor.data.pval)],
+                        n2=colnames(cor.data.pval)[col(cor.data.pval)],
+                        pval=c(cor.data.pval))
+
+# Generate adjusted significance values
+cor.data.pval.vec <- as.vector(cor.data.pval)
+cor.data.adjPval <- adjustPVals(cor.data.pval.vec, adjust="BH")
+
+# Reformat adjusted significance values and reformat vector into a matrix
+cor.data.adjPval <- as.numeric(format.pval(cor.data.adjPval, digits=2, nsmall=3)) # Will produce 'Warning: NAs introduced by coercion'
+dim(cor.data.adjPval) <- dim(cor.data.pval)
+colnames(cor.data.adjPval) <- cor.data.col
+rownames(cor.data.adjPval) <- cor.data.row
+
+# Conver from a N x M matrix to a pairwise list with NxM rows
+pairsAdjPval <- data.frame(n1=rownames(cor.data.adjPval)[row(cor.data.adjPval)],
+                           n2=colnames(cor.data.adjPval)[col(cor.data.adjPval)],
+                           adjPval=c(cor.data.adjPval))
+
+# Join correlation values, p-values, and adjusted p-values together into a single table.
+cor.data.val <- cbind(pairs.cor.data, pval=pairsPval$pval, adjPval=pairsAdjPval$adjPval)
+
+# Remove rows with missing values.
+cor.data.val.final <- cor.data.val[complete.cases(cor.data.val),]
+
+# Filter rows by adjusted p-value cutoff.
+maxPval <- 0.05
+cor.data.val.final.filtered <- cor.data.val.final[cor.data.val.final$adjPval <= maxPval,]
+
+# Write correlation and significance values for each pair of Genomes.
+write.table(cor.data.val.final.filtered, file=output.edges, quote=FALSE, sep="\t", row.names=FALSE)
+```
+
+
+Identify modules in network using the `cutreeDynamicTree` function.
+```{r network_module_detection}
+# Identify modules using hclust and cutreeDynamicTree
+hclust_tree<-hclust(as.dist(1-cor.data), method="complete")
+module_labels <- cutreeDynamicTree(dendro=hclust_tree, minModuleSize=20, deepSplit=TRUE)
+
+# Create a data.frame with the module number for each Genome
+data.modules <- as.data.frame(module_labels)
+data.modules$MAG_ID <- rownames(cor.data)
+
+# Add column with a difference color for each module
+Colors <- rainbow(max(module_labels)+1)
+data.modules$module_labels_colors <- Colors[data.modules$module_labels+1]
+```
+
+
+Create `igraph` object for network stats calculations.
+```{r network_stats}
+# Convert data.frame of network edges into igraph object (assumes first column is IDs to match)
+network <- graph_from_data_frame(cor.data.val.final.filtered, 
+                                 vertices = metadata,
+                                 directed = FALSE)
+```
+
+
+Identify modules using a different betweenness-based approach.
+```{r cluster_edge_betweenness, eval=FALSE}
+# Identify modules
+dendrogram <- cluster_edge_betweenness(network)
+plot_dendrogram(dendrogram)
+
+# Extract module info for each MAG
+t <- membership(dendrogram)
+cluster_edge_betweenness <- data.frame(MAG_ID=names(t))
+cluster_edge_betweenness$module_labels_2 <- t
+
+# Assign a color to each module
+mod.list <- unique(cluster_edge_betweenness$module_labels_2)
+Cols=rep(rev(brewer.pal(12,"Paired")), ceiling(length(mod.list)/12))
+Cols=colorRampPalette(Cols)(length(mod.list))
+names(Cols) <- mod.list
+print(paste(length(mod.list), "modules identified."))
+
+# Add colors to module list
+cluster_edge_betweenness$module_labels_colors_2 <- Cols[cluster_edge_betweenness$module_labels_2]
+```
+
+
+
+## 2. Calculate **centrality** measures for network.
+
+See: https://www.datacamp.com/tutorial/centrality-network-analysis-R
+```{r network_stats_centrality}
+# Empty data.frame for results.
+network.centrality <- data.frame(MAG_ID=names(V(network)))
+
+# Calculate the degree of centrality for each node (take just the results)
+network.centrality$degree <- centr_degree(network, mode = "all")$res
+
+# Calculate the closeness for each node
+network.centrality$closeness <- closeness(network, mode = "all")
+```
+
+
+
+## 3. Calculate **assortativity** measures for network.
+
+See: https://ona-book.org/similarity.html
+Description of assortativity values: https://ona-book.org/similarity.html#assortativity-in-networks
+"The assortativity coefficient of a graph is a measure of the extent to which vertices with the same properties connect to each other"
+-1 = dissortive
+ 0 = random
++1 = assortive
+
+1. Calculate categorical assortativity
+```{r network_stats_assortativity_categorical}
+assortativity_nominal(network, 
+              as.integer(as.factor(V(network)$Label)), 
+              directed=FALSE)
+```
+
+2. Calculate degree assortativity
+```{r network_stats_assortativity_degree}
+assortativity_degree(network, directed = FALSE)
+```
+
+
+
+## 4. Combine info
+
+Combine all information about a node (Genome/MAG/etc.) together into a single metadata data.frame.
+``` {r node_metadata}
+# Get sum of values across all samples for each Genome.
+data.rowsum <- data.frame("Row_Sum" = rowSums(data))
+data.rowsum$MAG_ID <- rownames(data.rowsum)
+
+# Row sum to log2 and log10.
+data.rowsum$Row_Sum_log2 <- log2(data.rowsum$Row_Sum)
+data.rowsum$Row_Sum_log10 <- log10(data.rowsum$Row_Sum)
+
+# Join metadata files together.
+metadata.combined <- metadata
+
+# Join species taxonomy and completness info with row sums.
+metadata.combined <- merge(metadata.combined, data.rowsum, by.x="MAG_ID", by.y="MAG_ID")
+
+# Join existing metadata.combined with modules identified
+metadata.combined <- merge(metadata.combined, data.modules, by.x="MAG_ID", by.y="MAG_ID")
+#metadata.combined <- merge(metadata.combined, cluster_edge_betweenness, by.x="MAG_ID", by.y="MAG_ID")
+
+# Join existing metadata with centrality measures results
+metadata.combined <- merge(metadata.combined, network.centrality, by.x="MAG_ID", by.y="MAG_ID")
+
+# Write metadata to file.
+write.table(metadata.combined, file=output.nodeinfo, quote=FALSE, sep="\t", row.names=FALSE)
+```
+
+
+
+## 5. Plot heatmap
+
+Plot heatmap of TMP values (Z-scaled) using a dendrogram derived from the correlation values used for network analysis.
+``` {r plot_heatmap_TPM_scaled}
+par(cex.main=0.7, cex.lab=0.9, cex.axis=0.9) # Change the font size of the legend title,labels and axis
+
+# Get dendrogram of groups (from clustering of correlation values)
+hclust_tree.dend <- as.dendrogram(hclust_tree)
+plot(as.phylo(hclust_tree), cex = 0.05)
+
+# Reformat scladded data used for correlation analysis
+t.data.tmp <- t.data %>% t() %>% as.matrix()
+
+
+
+#
+# Color by metadata groups
+#
+Rcol <- metadata.combined[match(rownames(t.data.tmp), metadata.combined$MAG_ID), ]$Label_color
+
+heatmap.2(t.data.tmp,
+          Rowv=hclust_tree.dend,
+          main="TPM z-score scaled rows - network dendrogram",
+          Colv=FALSE,
+          dendrogram="row",
+          col=viridis,
+          trace="none", # Draw "trace" line
+          key=TRUE, # Show color-key
+          margins=c(8,8), # Numeric vector of length 2 containing the margins for column and row names, respectively.
+          offsetRow=0,
+          offsetCol=0,
+          cexRow=0.1, # Positive numbers, used as cex.axis in for the row or column axis labeling.
+          cexCol=0.4,
+          #cellnote=formatC(t.data.tmp, big.mark=",", format = "fg"),
+          notecex=0.2,
+          RowSideColors=Rcol,
+          )
+
+heatmap.2(t.data.tmp,
+          #Rowv=hclust_tree.dend,
+          main="TPM z-score scaled rows - scaled value dendrogram",
+          Colv=FALSE,
+          dendrogram="row",
+          col=viridis,
+          trace="none", # Draw "trace" line
+          key=TRUE, # Show color-key
+          margins=c(8,8), # Numeric vector of length 2 containing the margins for column and row names, respectively.
+          offsetRow=0,
+          offsetCol=0,
+          cexRow=0.1, # Positive numbers, used as cex.axis in for the row or column axis labeling.
+          cexCol=0.4,
+          #cellnote=formatC(t.data.tmp, big.mark=",", format = "fg"),
+          notecex=0.2,
+          RowSideColors=Rcol,
+          )
+
+
+
+#
+# Color by dendrogram modules
+#
+Rcol <- metadata.combined[match(rownames(t.data.tmp), metadata.combined$MAG_ID), ]$module_labels_colors
+
+heatmap.2(t.data.tmp,
+          Rowv=hclust_tree.dend,
+          main="TPM z-score scaled rows - network dendrogram",
+          Colv=FALSE,
+          dendrogram="row",
+          col=viridis,
+          trace="none", # Draw "trace" line
+          key=TRUE, # Show color-key
+          margins=c(8,8), # Numeric vector of length 2 containing the margins for column and row names, respectively.
+          offsetRow=0,
+          offsetCol=0,
+          cexRow=0.1, # Positive numbers, used as cex.axis in for the row or column axis labeling.
+          cexCol=0.4,
+          #cellnote=formatC(t.data.tmp, big.mark=",", format = "fg"),
+          notecex=0.2,
+          RowSideColors=Rcol,
+          )
+
+heatmap.2(t.data.tmp,
+          #Rowv=hclust_tree.dend,
+          main="TPM z-score scaled rows - scaled value dendrogram",
+          Colv=FALSE,
+          dendrogram="row",
+          col=viridis,
+          trace="none", # Draw "trace" line
+          key=TRUE, # Show color-key
+          margins=c(8,8), # Numeric vector of length 2 containing the margins for column and row names, respectively.
+          offsetRow=0,
+          offsetCol=0,
+          cexRow=0.1, # Positive numbers, used as cex.axis in for the row or column axis labeling.
+          cexCol=0.4,
+          #cellnote=formatC(t.data.tmp, big.mark=",", format = "fg"),
+          notecex=0.2,
+          RowSideColors=Rcol,
+          )
+```
+
+
+
+## 6. Session Info
+
+```{r ressionInfo}
+sessionInfo()
+```
